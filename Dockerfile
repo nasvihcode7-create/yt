@@ -1,23 +1,25 @@
-# Use an official lightweight Python image
+# Step 1: Use a Python image (Slim version keeps it fast and small)
 FROM python:3.9-slim
 
-# Install system dependencies (FFmpeg is the key here!)
+# Step 2: Install FFmpeg (The actual software, not just the library)
+# We combine these to keep the Docker image size smaller
 RUN apt-get update && \
-    apt-get install -y ffmpeg && \
-    apt-get clean
+    apt-get install -y ffmpeg --no-install-recommends && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-# Set working directory
+# Step 3: Set the internal folder for the app
 WORKDIR /app
 
-# Copy requirements and install Python dependencies
+# Step 4: Install Python libraries
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code
+# Step 5: Copy your code and the cookie file into the image
 COPY . .
 
-# Expose the port Render will use
-EXPOSE 5000
+# Step 6: Set the environment variable for Flask
+ENV PORT=5000
 
-# Command to run the app using Gunicorn (Production server)
+# Step 7: Run the application
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
