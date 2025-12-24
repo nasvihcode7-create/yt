@@ -1,10 +1,9 @@
-# Step 1: Use a Python image (Slim version keeps it fast and small)
-FROM python:3.9-slim
+# Step 1: Use Python 3.12 slim image (updated from 3.9)
+FROM python:3.12-slim
 
-# Step 2: Install FFmpeg (The actual software, not just the library)
-# We combine these to keep the Docker image size smaller
+# Step 2: Install FFmpeg and curl for debugging
 RUN apt-get update && \
-    apt-get install -y ffmpeg --no-install-recommends && \
+    apt-get install -y ffmpeg curl --no-install-recommends && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -21,5 +20,5 @@ COPY . .
 # Step 6: Set the environment variable for Flask
 ENV PORT=5000
 
-# Step 7: Run the application
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+# Step 7: Run the application with gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--timeout", "120", "app:app"]
