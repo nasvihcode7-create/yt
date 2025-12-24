@@ -4,46 +4,54 @@ import yt_dlp
 import os
 import time
 
-# Update 1: specific folder for templates
 app = Flask(__name__, template_folder='templates')
 CORS(app)
 
-# Use /tmp for downloads on cloud platforms (Render/Heroku/AWS)
-# Regular folders might be read-only or not persist.
 DOWNLOAD_FOLDER = '/tmp'
+# Path to your cookies file
+COOKIES_FILE = 'youtube_cookies.txt'
 
 def format_selector(ctx):
-    # ... (Keep your existing format_selector function exactly the same) ...
-    # (I omitted it here to save space, but make sure you paste the function back in!)
     formats = ctx.get('formats', [])
     clean_formats = []
     seen_qualities = set()
+
     for f in formats:
+        # We look for mp4 files that have a video height (resolution)
         if f.get('ext') == 'mp4' and f.get('height'):
             resolution = f"{f['height']}p"
             filesize = f.get('filesize') or f.get('filesize_approx') or 0
             size_mb = f"{round(filesize / (1024 * 1024), 1)} MB" if filesize else "Unknown"
-            identifier = f"{resolution}"
-            if identifier not in seen_qualities:
+            
+            if resolution not in seen_qualities:
                 clean_formats.append({
-                    'format': 'MP4', 'quality': resolution, 'size': size_mb,
-                    'type': 'video', 'format_id': f['format_id']
+                    'format': 'MP4',
+                    'quality': resolution,
+                    'size': size_mb,
+                    'type': 'video',
+                    'format_id': f['format_id']
                 })
-                seen_qualities.add(identifier)
+                seen_qualities.add(resolution)
+    
     clean_formats.sort(key=lambda x: int(x['quality'].replace('p', '')), reverse=True)
     return clean_formats
 
-# Update 2: Route for the Homepage
 @app.route('/')
 def home():
     return render_template('index.html')
 
 @app.route('/api/info', methods=['POST'])
 def get_info():
-    # ... (Keep your existing get_info logic exactly the same) ...
     url = request.json.get('url')
-    if not url: return jsonify({'error': 'No URL provided'}), 400
-    ydl_opts = {'quiet': True}
+    if not url:
+        return jsonify({'error': 'No URL provided'}), 400
+
+    ydl_opts = {
+        'quiet': True,
+        'cookiefile': COOKIES_FILE,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -56,6 +64,7 @@ def get_info():
             }
             return jsonify(video_data)
     except Exception as e:
+        print(f"Error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/download', methods=['GET'])
@@ -63,10 +72,8 @@ def download_video():
     url = request.args.get('url')
     format_id = request.args.get('format_id')
     title = request.args.get('title', 'video')
-    
-    # Sanitize title to prevent filesystem errors
-    safe_title = "".join([c for c in title if c.isalpha() or c.isdigit() or c==' ']).rstrip()
-    filename = f"{safe_title}_{format_id}.mp4"
+
+    filename = f"download_{int(time.time())}.mp4"
     filepath = os.path.join(DOWNLOAD_FOLDER, filename)
     
     ydl_opts = {
@@ -74,8 +81,9 @@ def download_video():
         'outtmpl': filepath,
         'merge_output_format': 'mp4',
         'quiet': True,
-        # Update 3: Explicitly tell yt-dlp where ffmpeg is (Linux default path)
-        'ffmpeg_location': '/usr/bin/ffmpeg' 
+        'cookiefile': COOKIES_FILE,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'ffmpeg_location': '/usr/bin/ffmpeg'
     }
 
     try:
@@ -87,16 +95,15 @@ def download_video():
             try:
                 if os.path.exists(filepath):
                     os.remove(filepath)
-            except Exception as error:
-                app.logger.error("Error removing file", error)
+            except Exception as e:
+                print(f"Error deleting file: {e}")
             return response
 
-        return send_file(filepath, as_attachment=True, download_name=filename)
+        return send_file(filepath, as_attachment=True, download_name=f"{title}.mp4")
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    # Update 4: Bind to 0.0.0.0 and PORT env variable for Render
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
