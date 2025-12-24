@@ -1,1 +1,1 @@
-ERROR: 'youtube_cookies.txt' does not look like a Netscape format cookies file
+# Netscape HTTP Cookie File
