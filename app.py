@@ -7,8 +7,8 @@ import time
 app = Flask(__name__, template_folder='templates')
 CORS(app)
 
+# Use /tmp for downloads on cloud platforms (Render/Heroku/AWS)
 DOWNLOAD_FOLDER = '/tmp'
-# Path to your cookies file
 COOKIES_FILE = 'youtube_cookies.txt'
 
 def format_selector(ctx):
@@ -17,7 +17,7 @@ def format_selector(ctx):
     seen_qualities = set()
 
     for f in formats:
-        # We look for mp4 files that have a video height (resolution)
+        # Filter for MP4 files with video and audio (standard quality)
         if f.get('ext') == 'mp4' and f.get('height'):
             resolution = f"{f['height']}p"
             filesize = f.get('filesize') or f.get('filesize_approx') or 0
@@ -33,6 +33,7 @@ def format_selector(ctx):
                 })
                 seen_qualities.add(resolution)
     
+    # Sort qualities highest to lowest
     clean_formats.sort(key=lambda x: int(x['quality'].replace('p', '')), reverse=True)
     return clean_formats
 
@@ -46,10 +47,13 @@ def get_info():
     if not url:
         return jsonify({'error': 'No URL provided'}), 400
 
+    # These options follow the "bypass bot" recommendations from the yt-dlp docs
     ydl_opts = {
         'quiet': True,
         'cookiefile': COOKIES_FILE,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'referer': 'https://www.google.com/',
+        'nocheckcertificate': True
     }
     
     try:
@@ -64,7 +68,8 @@ def get_info():
             }
             return jsonify(video_data)
     except Exception as e:
-        print(f"Error: {str(e)}")
+        # We print to the Render console logs for easier debugging
+        print(f"Fetch Error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/download', methods=['GET'])
@@ -73,7 +78,8 @@ def download_video():
     format_id = request.args.get('format_id')
     title = request.args.get('title', 'video')
 
-    filename = f"download_{int(time.time())}.mp4"
+    # Generate a unique temporary filename
+    filename = f"dl_{int(time.time())}.mp4"
     filepath = os.path.join(DOWNLOAD_FOLDER, filename)
     
     ydl_opts = {
@@ -83,7 +89,9 @@ def download_video():
         'quiet': True,
         'cookiefile': COOKIES_FILE,
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'ffmpeg_location': '/usr/bin/ffmpeg'
+        'referer': 'https://www.google.com/',
+        'ffmpeg_location': '/usr/bin/ffmpeg', # Path for Render's Docker environment
+        'nocheckcertificate': True
     }
 
     try:
@@ -96,14 +104,16 @@ def download_video():
                 if os.path.exists(filepath):
                     os.remove(filepath)
             except Exception as e:
-                print(f"Error deleting file: {e}")
+                print(f"Cleanup Error: {e}")
             return response
 
         return send_file(filepath, as_attachment=True, download_name=f"{title}.mp4")
         
     except Exception as e:
+        print(f"Download Error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
+    # Render uses the PORT environment variable
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
